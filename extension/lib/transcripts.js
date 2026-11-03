@@ -4,7 +4,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {listNames, readText, rethrowIfCancelled} from './claudeCode.js';
+import {claudeDirectory, listNames, readText, rethrowIfCancelled} from './claudeCode.js';
 import {UsageAccumulator, isSubagentRunning, projectDirName} from './model.js';
 
 Gio._promisify(Gio.File.prototype, 'query_info_async');
@@ -22,7 +22,7 @@ const AGENT_SETTLE_MS = 2000;
 const META_SUFFIX = '.meta.json';
 
 export function projectsDirectory() {
-    return GLib.build_filenamev([GLib.get_home_dir(), '.claude', 'projects']);
+    return GLib.build_filenamev([claudeDirectory(), 'projects']);
 }
 
 async function queryInfo(path, attributes, cancellable) {

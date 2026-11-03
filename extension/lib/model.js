@@ -4,6 +4,7 @@ export const State = Object.freeze({
     WORKING: 'working',
     WAITING: 'waiting',
     BACKGROUND: 'background',
+    DONE: 'done', // Finished since the user last looked at its menu.
     IDLE: 'idle',
     UNKNOWN: 'unknown',
 });
@@ -20,6 +21,7 @@ const STATE_TEXT = {
     [State.WORKING]: 'Working',
     [State.WAITING]: 'Waiting for you',
     [State.BACKGROUND]: 'Background task running',
+    [State.DONE]: 'Finished',
     [State.IDLE]: 'Idle',
     [State.UNKNOWN]: 'Unknown state',
 };
@@ -32,11 +34,15 @@ const WAITING_REASON_TEXT = {
 // From most to least urgent: this is the state the single icon shows.
 const STATE_PRIORITY = [
     State.WAITING,
+    State.DONE,
     State.WORKING,
     State.BACKGROUND,
     State.UNKNOWN,
     State.IDLE,
 ];
+
+const ACTIVE_STATES = new Set([State.WORKING, State.WAITING, State.BACKGROUND]);
+const ATTENTION_STATES = new Set([State.WAITING, State.DONE]);
 
 // Copies only the useful fields: the source file also holds information (messaging
 // socket, etc.) that the UI has no reason to keep.
@@ -54,6 +60,7 @@ export function normalizeClaudeSession(raw) {
         cwd: typeof raw.cwd === 'string' ? raw.cwd : null,
         name: typeof raw.name === 'string' ? raw.name : null,
         kind: typeof raw.kind === 'string' ? raw.kind : null,
+        version: typeof raw.version === 'string' ? raw.version : null,
         rawStatus,
         waitingFor: typeof raw.waitingFor === 'string' ? raw.waitingFor : null,
         state: CLAUDE_STATUS_TO_STATE[rawStatus] ?? State.UNKNOWN,
@@ -74,7 +81,7 @@ export function parseProcStat(text) {
     if (fields.length < 20)
         return null;
 
-    return {state: fields[0], startTime: fields[19]};
+    return {state: fields[0], parent: Number(fields[1]), startTime: fields[19]};
 }
 
 // Comparing starttime protects against a PID being reused by another process after
@@ -130,6 +137,80 @@ export function stateText(session) {
     if (session.state === State.WAITING && session.waitingFor)
         return WAITING_REASON_TEXT[session.waitingFor] ?? `${STATE_TEXT[State.WAITING]} (${session.waitingFor})`;
     return STATE_TEXT[session.state];
+}
+
+// Turns `idle` into `done` for a session that finished since its menu was last
+// closed. It cannot know whether the user saw the terminal. Not persisted: a restart
+// of the Shell forgets it.
+export class AttentionTracker {
+    constructor() {
+        this._previous = new Map();
+        this._unseen = new Set();
+    }
+
+    apply(sessions) {
+        const previous = new Map();
+        const result = sessions.map(session => {
+            const before = this._previous.get(session.key);
+            previous.set(session.key, session.state);
+
+            if (session.state !== State.IDLE) {
+                this._unseen.delete(session.key);
+                return session;
+            }
+            if (ACTIVE_STATES.has(before))
+                this._unseen.add(session.key);
+            return this._unseen.has(session.key) ? {...session, state: State.DONE} : session;
+        });
+
+        this._previous = previous;
+        for (const key of this._unseen) {
+            if (!previous.has(key))
+                this._unseen.delete(key);
+        }
+        return result;
+    }
+
+    markSeen(key) {
+        this._unseen.delete(key);
+    }
+}
+
+export function compareByUrgency(a, b) {
+    return STATE_PRIORITY.indexOf(a.state) - STATE_PRIORITY.indexOf(b.state) ||
+        compareSessions(a, b);
+}
+
+// Label next to a session's icon. names: always | attention | never.
+export function sessionLabel(session, runningAgents, names) {
+    const showName = names === 'always' ||
+        (names === 'attention' && ATTENTION_STATES.has(session.state));
+    return [showName ? shortLabel(session) : '', runningAgents > 0 ? `+${runningAgents}` : '']
+        .filter(Boolean).join(' ');
+}
+
+// Label of the single icon: a count only means something with several sessions.
+export function summaryLabel(sessions, runningAgents) {
+    const waiting = sessions.filter(session => session.state === State.WAITING).length;
+    let count = '';
+    if (sessions.length > 1)
+        count = waiting > 0 ? `${waiting} waiting / ${sessions.length}` : String(sessions.length);
+    return [count, runningAgents > 0 ? `+${runningAgents}` : ''].filter(Boolean).join(' ');
+}
+
+// Finds the window holding a session from its process ancestors, nearest first.
+// Terminals with a single server process own all their windows under one PID, so
+// among those the title decides, then the most recently used. The tab stays unknown.
+export function chooseWindow(windows, ancestors, name) {
+    for (const pid of ancestors) {
+        const owned = windows.filter(window => window.pid === pid);
+        if (owned.length === 0)
+            continue;
+        const byTitle = owned.filter(window => name && window.title?.includes(name));
+        return (byTitle.length > 0 ? byTitle : owned)
+            .reduce((best, window) => (window.userTime > best.userTime ? window : best));
+    }
+    return null;
 }
 
 export function aggregateState(sessions) {

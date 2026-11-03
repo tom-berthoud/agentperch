@@ -37,6 +37,11 @@ function dumpState() {
         styleClass: indicator._icon.style_class,
         position: rightBox.indexOf(indicator.container),
         menu: menuLines(indicator.menu),
+        // Catches a submenu detached from its header after reordering.
+        detailsFollowHeaders: indicator.menu._getMenuItems().filter(item => item.menu).every(item => {
+            const actors = indicator.menu.box.get_children();
+            return actors.indexOf(item.menu.actor) === actors.indexOf(item) + 1;
+        }),
     }));
     indicators.sort((a, b) => a.position - b.position);
 
@@ -46,6 +51,10 @@ function dumpState() {
         extensionError: target?.error ?? null,
         indicators,
         windows: global.get_window_actors().map(actor => actor.meta_window.get_title()),
+        windowPids: global.get_window_actors().map(actor => actor.meta_window.get_pid()),
+        focusedWindow: global.display.focus_window?.get_title() ?? null,
+        notifications: Main.messageTray.getSources()
+            .flatMap(source => source.notifications.map(item => item.title)),
     };
 }
 
@@ -86,6 +95,16 @@ export default class ProbeExtension extends Extension {
                 indicatorEntries()[0]?.[1].menu.open(false);
             if (consume('cmd-close-menu'))
                 indicatorEntries()[0]?.[1].menu.close(false);
+            // The file names the PID of the session to act on.
+            const goToPath = `${root}/cmd-go-to-terminal`;
+            if (GLib.file_test(goToPath, GLib.FileTest.EXISTS)) {
+                const [, contents] = GLib.file_get_contents(goToPath);
+                const pid = new TextDecoder().decode(contents).trim();
+                GLib.unlink(goToPath);
+                indicatorEntries().find(([role]) => role.startsWith(`agentperch-${pid}:`))?.[1]
+                    .menu._getMenuItems()
+                    .find(item => item.label?.text === 'Go to terminal')?.activate(null);
+            }
             if (consume('cmd-screenshot')) {
                 await screenshot(`${root}/screenshot.png`);
                 GLib.file_set_contents(`${root}/screenshot-done`, '');

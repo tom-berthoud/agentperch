@@ -12,6 +12,14 @@ case "${1:-}" in
     check)
         "$ROOT/scripts/headless-check.sh"
         ;;
+    demo)
+        # Regenerates docs/demo.gif from fake sessions. Needs ImageMagick.
+        frames="$(mktemp -d)"
+        AGENTPERCH_DEMO_DIR="$frames" "$ROOT/scripts/headless-check.sh"
+        magick -delay 200 -loop 0 "$frames"/*.png -crop 760x500+840+0 +repage \
+            -colors 128 -layers optimize "$ROOT/docs/demo.gif"
+        echo "Written: docs/demo.gif"
+        ;;
     link)
         if [[ -e "$TARGET" && ! -L "$TARGET" ]]; then
             echo "$TARGET exists and is not a link: nothing was changed." >&2
@@ -37,7 +45,7 @@ case "${1:-}" in
         gnome-extensions pack "$ROOT/extension" --extra-source=lib --extra-source=../LICENSE --force --out-dir="$ROOT/dist"
         ;;
     *)
-        echo "Usage: $0 {test|check|link|unlink|pack}" >&2
+        echo "Usage: $0 {test|check|demo|link|unlink|pack}" >&2
         exit 2
         ;;
 esac

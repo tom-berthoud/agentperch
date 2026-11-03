@@ -2,12 +2,15 @@
 import GLib from 'gi://GLib';
 import System from 'system';
 
-import {scanSessions} from '../extension/lib/claudeCode.js';
+import {processAncestors, scanSessions} from '../extension/lib/claudeCode.js';
 import {SessionFiles} from '../extension/lib/transcripts.js';
 import {
+    AttentionTracker,
     State,
     UsageAccumulator,
     aggregateState,
+    chooseWindow,
+    compareByUrgency,
     detailLines,
     displayName,
     formatDuration,
@@ -18,8 +21,10 @@ import {
     parseProcStat,
     prettyPath,
     projectDirName,
+    sessionLabel,
     shortLabel,
     stateText,
+    summaryLabel,
 } from '../extension/lib/model.js';
 
 let failures = 0;
@@ -61,10 +66,54 @@ check('status missing', stateText(normalizeClaudeSession({...base, status: undef
 
 // Single icon
 const withState = (...states) => states.map(state => ({state}));
+check('finished before working', aggregateState(withState(State.WORKING, State.DONE)), State.DONE);
 check('waiting comes first', aggregateState(withState(State.IDLE, State.WORKING, State.WAITING)), State.WAITING);
 check('working before background', aggregateState(withState(State.BACKGROUND, State.WORKING)), State.WORKING);
 check('unknown before idle', aggregateState(withState(State.IDLE, State.UNKNOWN)), State.UNKNOWN);
 check('no session', aggregateState([]), State.IDLE);
+
+// Finished, not viewed yet
+const tracked = (key, state) => ({key, state, startedAt: 1, pid: 1});
+const attention = new AttentionTracker();
+const states = (...sessions) => attention.apply(sessions).map(session => session.state);
+check('already idle: nothing new', states(tracked('a', State.IDLE)), [State.IDLE]);
+states(tracked('a', State.WORKING));
+check('working -> idle: not viewed', states(tracked('a', State.IDLE)), [State.DONE]);
+check('stays not viewed', states(tracked('a', State.IDLE)), [State.DONE]);
+attention.markSeen('a');
+check('viewed: idle', states(tracked('a', State.IDLE)), [State.IDLE]);
+states(tracked('a', State.WORKING));
+states(tracked('a', State.IDLE));
+states(tracked('a', State.WORKING));
+check('new prompt clears it', states(tracked('a', State.WORKING)), [State.WORKING]);
+states(tracked('b', State.WAITING));
+check('waiting -> idle counts too', states(tracked('b', State.IDLE)), [State.DONE]);
+states();
+check('closed session forgotten', states(tracked('b', State.IDLE)), [State.IDLE]);
+
+check('urgency order',
+    [tracked('i', State.IDLE), tracked('w', State.WAITING), tracked('b', State.WORKING)]
+        .sort(compareByUrgency).map(session => session.key), ['w', 'b', 'i']);
+
+// Labels
+const labelled = state => ({name: 'mysession', state, pid: 1});
+check('name always', sessionLabel(labelled(State.IDLE), 0, 'always'), 'mysession');
+check('name never, with badge', sessionLabel(labelled(State.WAITING), 2, 'never'), '+2');
+check('name when waiting', sessionLabel(labelled(State.WAITING), 0, 'attention'), 'mysession');
+check('name when finished', sessionLabel(labelled(State.DONE), 0, 'attention'), 'mysession');
+check('no name when working', sessionLabel(labelled(State.WORKING), 0, 'attention'), '');
+check('one session: no count', summaryLabel(withState(State.WAITING), 0), '');
+check('one session: badge only', summaryLabel(withState(State.WORKING), 1), '+1');
+check('several sessions', summaryLabel(withState(State.WORKING, State.IDLE), 0), '2');
+check('several, some waiting', summaryLabel(withState(State.WAITING, State.IDLE, State.WORKING), 2), '1 waiting / 3 +2');
+
+// Terminal window
+const win = (pid, title, userTime) => ({pid, title, userTime});
+check('nearest ancestor', chooseWindow([win(5, 'far', 9), win(3, 'near', 1)], [2, 3, 5], null).title, 'near');
+check('title decides', chooseWindow([win(3, 'other', 9), win(3, 'mysession tab', 1)], [2, 3], 'mysession').title, 'mysession tab');
+check('otherwise most recent', chooseWindow([win(3, 'a', 1), win(3, 'b', 9)], [2, 3], 'x').title, 'b');
+check('no window', chooseWindow([win(9, 'a', 1)], [2, 3], 'x'), null);
+check('no name, no crash', chooseWindow([win(3, null, 1)], [3], null).pid, 3);
 
 // Subagents
 check('project directory', projectDirName('/tmp/a_b.c/-d'), '-tmp-a-b-c--d');
@@ -132,7 +181,7 @@ check('inactive agents capped',
 // /proc/<pid>/stat
 const tail = 'S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 777 19';
 check('comm with spaces and parentheses',
-    parseProcStat(`123 (a b) (c)) ${tail}`), {state: 'S', startTime: '777'});
+    parseProcStat(`123 (a b) (c)) ${tail}`), {state: 'S', parent: 1, startTime: '777'});
 check('truncated stat', parseProcStat('123 (a) S 1'), null);
 check('unreadable stat', parseProcStat('garbage'), null);
 check('same process', isSameLiveProcess({state: 'S', startTime: '777'}, '777'), true);
@@ -169,8 +218,15 @@ async function testScan() {
     write('broken.json', '{not json');
     write('secret.key', 'must never be read');
 
+    write('renamed.json', JSON.stringify({process_id: pid, status: 'busy'}));
     const first = await scanSessions(dir, new Map());
     check('scan: only the live session remains', first.sessions.map(s => s.sessionId), ['s']);
+    check('scan: unknown format counted', first.rejected, 1);
+
+    const ancestors = await processAncestors(pid);
+    check('ancestors start at the process', ancestors[0], pid);
+    check('ancestors go up', ancestors.length > 1, true);
+    check('ancestors of a dead process', await processAncestors(2147483646), [2147483646]);
 
     // Partial write: the last known value is kept.
     write('live.json', '{"pid":');
@@ -180,7 +236,7 @@ async function testScan() {
     const none = await scanSessions(`${dir}/absent`, new Map());
     check('scan: missing directory', none.sessions, []);
 
-    for (const name of ['live.json', 'reused.json', 'dead.json', 'broken.json', 'secret.key'])
+    for (const name of ['renamed.json', 'live.json', 'reused.json', 'dead.json', 'broken.json', 'secret.key'])
         GLib.unlink(`${dir}/${name}`);
     GLib.rmdir(dir);
 }

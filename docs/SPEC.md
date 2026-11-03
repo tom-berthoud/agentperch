@@ -8,11 +8,11 @@ finished, or is waiting for an answer, without going back to the terminal.
 ## Out of scope for v1
 
 - Subscription quotas and monetary cost
-- Going back to the terminal, resuming a session
+- Resuming a closed session, selecting a terminal tab
 - Answering permission prompts from the panel
 - Tools other than Claude Code
 - Publishing on extensions.gnome.org
-- Logo, notifications
+- Logo
 
 ## Data model
 
@@ -23,7 +23,7 @@ session
 ├── source        "claude-code"
 ├── key           stable identifier of a process (pid + starttime)
 ├── sessionId, pid, procStart, kind, cwd, name
-├── state         working | waiting | background | idle | unknown
+├── state         working | waiting | background | done | idle | unknown
 ├── rawStatus     source value, kept for diagnostics
 ├── waitingFor    reason for waiting, when known
 └── startedAt, statusSince
@@ -42,6 +42,14 @@ session
 | `shell` | | Turn finished, a command is still running in the background | `background` |
 | `idle` | | Nothing in progress | `idle` |
 | other | | Not observed | `unknown`, raw value shown |
+
+`done` is not a source value: AgentPerch derives it when an active session becomes
+`idle`, until the user closes its menu, goes to its terminal or starts a new prompt.
+
+`claude agents --json` is the documented way to list sessions, and `scripts/doctor.sh`
+uses it to detect drift. AgentPerch does not poll it: starting a process every few
+seconds costs more than reading files, and its output has no `procStart`, and no
+`shell` value according to its documentation.
 
 Claude Code hooks remain an option if the format changes, or to tell "has
 finished" from "has not done anything yet". They are no longer needed to detect a
@@ -75,11 +83,15 @@ percentage, because the context window size does not appear in these files.
   token option on, incrementally, and only the numbers and the model are kept.
 - Subagent `.meta.json` files are read continuously when the subagent option is on.
   Their `description` is task text, kept in memory and displayed.
+- Notifications are opt-in, and wait 3 s so auto-approved prompts stay silent.
+- The terminal window is found through the process tree. With a single-process
+  terminal server the window is a best guess, and the tab stays unknown.
 - One icon per session or a single icon, as chosen. Subagents are a badge, not icons.
 
 ## Open questions
 
-1. How to tell "has finished" from "has not done anything yet"? `idle` covers both.
+1. Should sessions of other agents use a hook bridge? Their state is only documented
+   through hooks, which means changing each tool's configuration.
 2. Should sessions of a `kind` other than `interactive` appear?
 3. Does `pidDomain` have a role for sessions started in a container?
 4. Do the display delay and the space taken in the bar suit daily use?

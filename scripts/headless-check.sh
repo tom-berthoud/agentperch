@@ -32,10 +32,13 @@ PROBE="$AGENTPERCH_PROBE_DIR"
 SESSIONS="$HOME/.claude/sessions"
 EXT_ROOT="$HOME/.local/share/gnome-shell/extensions"
 mkdir -p "$SESSIONS" "$EXT_ROOT"
-cp -r "$ROOT/extension" "$EXT_ROOT/$UUID"
+# Installs the real zip, so a file missing from the package fails the test.
+glib-compile-schemas "$ROOT/extension/schemas"
+gnome-extensions pack "$ROOT/extension" --extra-source=lib --extra-source=../LICENSE \
+    --force --out-dir="$WORK"
+gnome-extensions install --force "$WORK/$UUID.shell-extension.zip"
 cp -r "$ROOT/tests/probe" "$EXT_ROOT/$PROBE_UUID"
 SCHEMAS="$EXT_ROOT/$UUID/schemas"
-glib-compile-schemas "$SCHEMAS"
 perch_set() { gsettings --schemadir "$SCHEMAS" set org.gnome.shell.extensions.agentperch "$1" "$2"; }
 
 failures=0
@@ -117,7 +120,7 @@ wait_for "the menu shows the waiting reason and the path" 5 \
      and (.indicators[0].menu[2] == "~/projects/planning-backend")
      and (.indicators[0].menu[4] | contains("claude-code"))' || true
 wait_for "a closed menu does not read transcripts" 2 \
-    '(.indicators[0].menu | length) == 5' || true
+    '(.indicators[0].menu | length) == 6' || true
 
 touch "$PROBE/cmd-open-menu"
 wait_for "an open menu shows tokens and subagents" 5 \
@@ -128,6 +131,24 @@ wait_for "an open menu shows tokens and subagents" 5 \
 touch "$PROBE/cmd-screenshot"
 for _ in $(seq 1 50); do [[ -f "$PROBE/screenshot-done" ]] && break; sleep 0.2; done
 if [[ -s "$PROBE/screenshot.png" ]]; then ok "screenshot"; else fail "screenshot"; fi
+
+# Optional frames for the README animation (./scripts/dev.sh demo).
+demo_frame() { # file name; session status; waitingFor
+    write_session "$PID_A" "$2" planning-backend $((now_ms - 1500000)) "${3:-}"
+    sleep 1
+    mv "$PROBE/screenshot-done" "$PROBE/screenshot-done.old"
+    touch "$PROBE/cmd-screenshot"
+    for _ in $(seq 1 50); do [[ -f "$PROBE/screenshot-done" ]] && break; sleep 0.2; done
+    cp "$PROBE/screenshot.png" "$AGENTPERCH_DEMO_DIR/$1.png"
+}
+if [[ -n "${AGENTPERCH_DEMO_DIR:-}" ]]; then
+    demo_frame 1 busy
+    demo_frame 2 waiting "permission prompt"
+    demo_frame 3 busy
+    demo_frame 4 shell
+    demo_frame 5 idle
+    write_session "$PID_A" busy planning-backend $((now_ms - 1500000))
+fi
 touch "$PROBE/cmd-close-menu"
 
 write_session "$PID_B" busy scanner-3d $((now_ms - 600000))
@@ -141,11 +162,13 @@ wait_for "an unknown status stays visible" 3 \
     '.indicators[1].icon == "dialog-question-symbolic" and (.indicators[1].menu[1] | contains("Unknown state (brand-new)"))' || true
 write_session "$PID_B" idle scanner-3d $((now_ms - 600000))
 
-perch_set show-session-names false
+perch_set session-names "'attention'"
+wait_for "names only when a session needs you" 5 "$labels == [\"+1\",\"\",\"a-really-long…\"]" || true
+perch_set session-names "'never'"
 wait_for "names can be hidden" 5 "$labels == [\"+1\",\"\",\"\"]" || true
 perch_set show-subagents false
 wait_for "the badge can be hidden" 5 "$labels == [\"\",\"\",\"\"]" || true
-perch_set show-session-names true
+perch_set session-names "'always'"
 perch_set show-subagents true
 
 perch_set show-usage false
@@ -158,18 +181,43 @@ perch_set show-usage true
 
 perch_set display-mode "'single'"
 wait_for "a single icon, on the most urgent state" 5 \
-    '(.indicators | length) == 1 and .indicators[0].label == "3 +1"
+    '(.indicators | length) == 1 and .indicators[0].label == "1 waiting / 3 +1"
      and .indicators[0].icon == "dialog-warning-symbolic"
      and (.indicators[0].menu | index("a-really-long-session-name — Asking for permission")) != null' || true
 touch "$PROBE/cmd-open-menu"
 wait_for "the single icon details each session" 5 \
     '(.indicators[0].menu | index("Current context: 72k tokens")) != null' || true
+wait_for "the most urgent session comes first when opening, with its details" 3 \
+    '([.indicators[0].menu[] | select(contains(" — "))][0] | startswith("a-really-long-session-name"))
+     and .indicators[0].detailsFollowHeaders' || true
 touch "$PROBE/cmd-close-menu"
 perch_set display-mode "'per-session'"
 wait_for "back to one icon per session" 5 '(.indicators | length) == 3' || true
 
 WAYLAND_DISPLAY=agentperch-test gnome-extensions prefs "$UUID" > "$WORK/prefs.log" 2>&1 || true
 wait_for "the preferences window opens" 15 '.windows | any(. == "AgentPerch")' || true
+
+touch "$PROBE/cmd-close-menu"
+wait_for "no notification while the option is off" 1 '.notifications == []' || true
+perch_set notify-on-waiting true
+wait_for "the option notifies a session that keeps waiting" 6 \
+    '.notifications | any(. == "a-really-long-session-name is waiting for you")' || true
+write_session "$PID_C" busy a-really-long-session-name $((now_ms - 60000))
+wait_for "the notification goes away when it stops waiting" 4 '.notifications == []' || true
+write_session "$PID_C" waiting a-really-long-session-name $((now_ms - 60000)) "permission prompt"
+perch_set notify-on-waiting false
+
+write_session "$PID_B" busy scanner-3d $((now_ms - 600000))
+wait_for "working session" 3 '.indicators[1].icon == "content-loading-symbolic"' || true
+write_session "$PID_B" idle scanner-3d $((now_ms - 600000))
+wait_for "a finished session stands out" 3 \
+    '.indicators[1].icon == "mail-unread-symbolic" and (.indicators[1].menu[1] | startswith("Finished"))' || true
+
+echo "$PID_B" > "$PROBE/cmd-go-to-terminal"
+wait_for "no window for a session: a notification says so" 4 \
+    '.notifications | any(. == "AgentPerch")' || true
+wait_for "a failed lookup does not clear finished" 3 \
+    '.indicators[1].icon == "mail-unread-symbolic"' || true
 
 kill -9 "$PID_A"; wait "$PID_A" 2>/dev/null || true
 wait_for "a crashed session (file left behind) disappears" 8 \
@@ -187,7 +235,18 @@ wait_for "disable() removes all icons" 5 '.indicators == [] and (.extensionError
 touch "$PROBE/cmd-enable"
 wait_for "enable() recreates them" 5 "$labels == [\"scanner-3d\",\"fresh\"]" || true
 
-if grep -E "JS ERROR|AgentPerch:|agentperch@|probe:|already disposed" "$WORK/shell.log" "$WORK/prefs.log"; then
+# A fake session owned by the preferences process leads to its window: the same
+# lookup as for a terminal, without needing one in this minimal session.
+PREFS_PID="$(jq -r '[.windows, .windowPids] | transpose | map(select(.[0] == "AgentPerch"))[0][1]' "$PROBE/state.json")"
+write_session "$PREFS_PID" idle prefs-window $((now_ms + 1000))
+wait_for "the session owned by the window appears" 3 "$labels | index(\"prefs-window\") != null" || true
+NOTIFICATIONS_BEFORE="$(jq '[.notifications[] | select(. == "AgentPerch")] | length' "$PROBE/state.json")"
+echo "$PREFS_PID" > "$PROBE/cmd-go-to-terminal"
+wait_for "go to terminal finds the window of the session" 4 \
+    ".focusedWindow == \"AgentPerch\" and ([.notifications[] | select(. == \"AgentPerch\")] | length) == $NOTIFICATIONS_BEFORE" || true
+
+if grep -E "JS ERROR|AgentPerch:|agentperch@|probe:|already disposed" "$WORK/shell.log" "$WORK/prefs.log" \
+    | grep -v 'unrecognized status "brand-new"'; then
     fail "errors in the Shell log (above)"
 else
     ok "no JS errors in the Shell log"

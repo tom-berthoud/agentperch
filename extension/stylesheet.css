@@ -18,8 +18,12 @@
     color: #99c1f1;
 }
 
-.agentperch-idle {
+.agentperch-done {
     color: #57e389;
+}
+
+.agentperch-idle {
+    color: #c0bfbc;
 }
 
 .agentperch-unknown {

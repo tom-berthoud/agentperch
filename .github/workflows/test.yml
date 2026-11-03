@@ -14,3 +14,17 @@ jobs:
       - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y gjs
       - run: ./scripts/dev.sh test
+
+  shell:
+    name: GNOME Shell ${{ matrix.gnome }} (Fedora ${{ matrix.fedora }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {fedora: 44, gnome: 50}
+          - {fedora: 45, gnome: 51}
+    steps:
+      - uses: actions/checkout@v5
+      - run: ./scripts/container-check.sh ${{ matrix.fedora }}

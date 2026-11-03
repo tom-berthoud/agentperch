@@ -16,10 +16,16 @@ Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async');
 Gio._promisify(Gio.FileEnumerator.prototype, 'close_async');
 
 const BATCH_SIZE = 50;
+const MAX_PROCESS_DEPTH = 32;
 const decoder = new TextDecoder();
 
+export function claudeDirectory() {
+    return GLib.getenv('CLAUDE_CONFIG_DIR') ||
+        GLib.build_filenamev([GLib.get_home_dir(), '.claude']);
+}
+
 export function sessionsDirectory() {
-    return GLib.build_filenamev([GLib.get_home_dir(), '.claude', 'sessions']);
+    return GLib.build_filenamev([claudeDirectory(), 'sessions']);
 }
 
 export async function readText(path, cancellable) {
@@ -82,6 +88,9 @@ async function loadSession(directory, name, previous, cancellable) {
     try {
         const text = await readText(GLib.build_filenamev([directory, name]), cancellable);
         session = normalizeClaudeSession(JSON.parse(text));
+        // Valid JSON without the expected fields: the format may have changed.
+        if (!session)
+            return {name, session: null, rejected: true};
     } catch (e) {
         rethrowIfCancelled(e);
         // File being written or deleted: keep the last known value so an icon does not
@@ -92,16 +101,36 @@ async function loadSession(directory, name, previous, cancellable) {
     return {name, session};
 }
 
-// Returns the sorted live sessions, and the cache to pass to the next scan.
+// Walks up the process tree from a PID, nearest first.
+export async function processAncestors(pid, cancellable = null) {
+    const ancestors = [];
+    let current = pid;
+    for (let depth = 0; current > 1 && depth < MAX_PROCESS_DEPTH; depth++) {
+        ancestors.push(current);
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            const stat = parseProcStat(await readText(`/proc/${current}/stat`, cancellable));
+            current = stat?.parent ?? 0;
+        } catch (e) {
+            rethrowIfCancelled(e);
+            break;
+        }
+    }
+    return ancestors;
+}
+
+// Returns the sorted live sessions, the cache to pass to the next scan, and how
+// many files were rejected.
 export async function scanSessions(directory, previous, cancellable = null) {
     // The .json filter notably excludes the .key files in this directory, which the
     // extension must never open.
     const names = await listNames(directory, '.json', cancellable);
     const loaded = await Promise.all(
         names.map(name => loadSession(directory, name, previous, cancellable)));
-    const entries = loaded.filter(Boolean);
+    const entries = loaded.filter(entry => entry?.session);
 
     return {
+        rejected: loaded.filter(entry => entry?.rejected).length,
         sessions: entries.map(entry => entry.session).sort(compareSessions),
         cache: new Map(entries.map(entry => [entry.name, entry.session])),
     };

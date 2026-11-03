@@ -9,9 +9,18 @@
       <default>"per-session"</default>
       <summary>One top bar icon per session, or a single icon for all sessions</summary>
     </key>
-    <key name="show-session-names" type="b">
-      <default>true</default>
-      <summary>Show the session name next to its icon</summary>
+    <key name="session-names" type="s">
+      <choices>
+        <choice value="always"/>
+        <choice value="attention"/>
+        <choice value="never"/>
+      </choices>
+      <default>"always"</default>
+      <summary>When to show the session name next to its icon</summary>
+    </key>
+    <key name="notify-on-waiting" type="b">
+      <default>false</default>
+      <summary>Send a notification when a session keeps waiting for you</summary>
     </key>
     <key name="show-subagents" type="b">
       <default>true</default>

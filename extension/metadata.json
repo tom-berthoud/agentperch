@@ -2,7 +2,8 @@
     "uuid": "agentperch@tom-berthoud.github.io",
     "name": "AgentPerch",
     "description": "One top bar icon per Claude Code session, showing whether it is working, idle or waiting for you.",
-    "shell-version": ["50"],
+    "version-name": "0.2.0",
+    "shell-version": ["50", "51"],
     "settings-schema": "org.gnome.shell.extensions.agentperch",
     "url": "https://github.com/tom-berthoud/agentperch"
 }
