@@ -1,0 +1,6 @@
+{
+    "uuid": "agentperch-probe@tests.invalid",
+    "name": "AgentPerch test probe",
+    "description": "Test helper, never installed outside the isolated headless check.",
+    "shell-version": ["50"]
+}

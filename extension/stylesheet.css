@@ -1,0 +1,27 @@
+.agentperch-indicator {
+    spacing: 4px;
+}
+
+.agentperch-label {
+    font-size: 0.9em;
+}
+
+.agentperch-working {
+    color: #62a0ea;
+}
+
+.agentperch-waiting {
+    color: #ffa348;
+}
+
+.agentperch-background {
+    color: #99c1f1;
+}
+
+.agentperch-idle {
+    color: #57e389;
+}
+
+.agentperch-unknown {
+    color: #f8e45c;
+}

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.agentperch" path="/org/gnome/shell/extensions/agentperch/">
+    <key name="display-mode" type="s">
+      <choices>
+        <choice value="per-session"/>
+        <choice value="single"/>
+      </choices>
+      <default>"per-session"</default>
+      <summary>One top bar icon per session, or a single icon for all sessions</summary>
+    </key>
+    <key name="show-session-names" type="b">
+      <default>true</default>
+      <summary>Show the session name next to its icon</summary>
+    </key>
+    <key name="show-subagents" type="b">
+      <default>true</default>
+      <summary>Show running subagents as a badge and list them in the menu</summary>
+    </key>
+    <key name="show-usage" type="b">
+      <default>true</default>
+      <summary>Read session transcripts to show token usage in the menu</summary>
+    </key>
+  </schema>
+</schemalist>
