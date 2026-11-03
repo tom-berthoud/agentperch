@@ -22,14 +22,14 @@ import {
 } from './lib/model.js';
 import {SessionFiles, projectsDirectory} from './lib/transcripts.js';
 
-// Un crash ne génère aucun événement dans le dossier : ce scan périodique est
-// ce qui retire les sessions mortes.
+// A crash produces no event in the directory: this periodic scan is what removes
+// dead sessions.
 const RESCAN_INTERVAL_S = 5;
 const DEBOUNCE_MS = 150;
 const SUMMARY_ROLE = 'agentperch-summary';
 
-// L'icône change de forme en plus de la couleur, pour rester lisible sans
-// distinguer les couleurs.
+// The icon changes shape as well as color, so it stays readable without telling
+// colors apart.
 const STATE_ICON = {
     [State.WORKING]: 'content-loading-symbolic',
     [State.WAITING]: 'dialog-warning-symbolic',
@@ -38,7 +38,7 @@ const STATE_ICON = {
     [State.UNKNOWN]: 'dialog-question-symbolic',
 };
 
-// Les lignes de détail d'une session, dans un menu ou un sous-menu.
+// The detail lines of a session, in a menu or a submenu.
 class SessionDetailsView {
     constructor(menu) {
         const addInfoItem = () => {
@@ -60,14 +60,14 @@ class SessionDetailsView {
         const now = Date.now();
         const since = session.statusSince === null
             ? ''
-            : ` depuis ${formatDuration(now - session.statusSince)}`;
+            : ` for ${formatDuration(now - session.statusSince)}`;
 
         this._titleItem.label.text = displayName(session);
         this._stateItem.label.text = `${stateText(session)}${since}`;
         this._pathItem.label.text = prettyPath(session.cwd, GLib.get_home_dir());
         this._ageItem.label.text = session.startedAt
-            ? `Session ouverte depuis ${formatDuration(now - session.startedAt)}`
-            : 'Début de session inconnu';
+            ? `Session open for ${formatDuration(now - session.startedAt)}`
+            : 'Session start unknown';
         this._metaItem.label.text = `${session.source} · PID ${session.pid}`;
     }
 
@@ -143,8 +143,8 @@ class SessionIndicator extends PerchIndicator {
     }
 });
 
-// Mode « une seule icône » : l'état le plus urgent, le nombre de sessions, et une
-// entrée dépliable par session.
+// Single icon mode: the most urgent state, the number of sessions, and one
+// expandable entry per session.
 const SummaryIndicator = GObject.registerClass(
 class SummaryIndicator extends PerchIndicator {
     _init(onMenuOpened) {
@@ -166,7 +166,7 @@ class SummaryIndicator extends PerchIndicator {
             }
         }
 
-        // Une nouvelle session est la plus récente : l'ajouter à la fin garde le tri.
+        // A new session is the most recent one: appending it keeps the order.
         for (const session of sessions) {
             let row = this._rows.get(session.key);
             if (!row) {
@@ -228,8 +228,8 @@ class Perch {
                 .monitor_directory(Gio.FileMonitorFlags.NONE, this._cancellable);
             this._monitor.connect('changed', () => this._scheduleScan());
         } catch (e) {
-            // Le scan périodique reste actif : l'extension fonctionne, en moins réactif.
-            console.warn(`AgentPerch: surveillance du dossier impossible: ${e.message}`);
+            // The periodic scan keeps running: the extension still works, less responsively.
+            console.warn(`AgentPerch: cannot monitor the directory: ${e.message}`);
         }
     }
 
@@ -243,8 +243,8 @@ class Perch {
         });
     }
 
-    // Un seul scan à la fois : une demande reçue pendant un scan en relance un
-    // autre à la fin, pour ne jamais rester sur un état périmé.
+    // One scan at a time: a request received during a scan starts another one when
+    // it ends, so the display never stays on a stale state.
     async _scan() {
         if (this._scanning) {
             this._rescanNeeded = true;
@@ -272,7 +272,7 @@ class Perch {
             } while (this._rescanNeeded);
         } catch (e) {
             if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                console.error(`AgentPerch: échec du scan: ${e.message}`);
+                console.error(`AgentPerch: scan failed: ${e.message}`);
         } finally {
             this._scanning = false;
         }
@@ -289,8 +289,8 @@ class Perch {
 
     _onSettingsChanged() {
         this._readOptions();
-        // Repart de zéro : les menus existants peuvent contenir des données
-        // que l'option désactivée ne doit plus montrer.
+        // Start over: existing menus may hold data that the disabled option must no
+        // longer show.
         this._destroyIndicators();
         if (!this._options.showSubagents)
             this._runningAgents.clear();
@@ -327,8 +327,8 @@ class Perch {
             }
         }
 
-        // Les sessions sont triées par date de début : l'indice dans la liste
-        // donne aussi une position stable dans la barre.
+        // Sessions are sorted by start time: the list index also gives a stable
+        // position in the bar.
         this._sessions.forEach((session, position) => {
             const running = this._runningAgents.get(session.sessionId) ?? 0;
             let indicator = this._indicators.get(session.key);
@@ -357,7 +357,7 @@ class Perch {
         this._render();
     }
 
-    // Ne lit les transcripts que pour les menus ouverts.
+    // Reads transcripts only for open menus.
     async _refreshOpenMenus() {
         if (this._detailsPending) {
             this._detailsAgain = true;
@@ -375,7 +375,7 @@ class Perch {
                         const details = await this._files.details(session, {usage, subagents});
                         if (this._cancellable.is_cancelled())
                             return;
-                        // Pendant la lecture, l'option a pu changer et la session se fermer.
+                        // During the read, the option may have changed and the session may have closed.
                         const current = indicator === this._summary ||
                             this._indicators.get(session.key) === indicator;
                         if (current && indicator.ownsView(view))
@@ -385,7 +385,7 @@ class Perch {
             } while (this._detailsAgain);
         } catch (e) {
             if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                console.error(`AgentPerch: échec de lecture des détails: ${e.message}`);
+                console.error(`AgentPerch: failed to read details: ${e.message}`);
         } finally {
             this._detailsPending = false;
         }

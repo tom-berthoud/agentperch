@@ -1,91 +1,85 @@
-# AgentPerch : spécification v1
+# AgentPerch: v1 specification
 
-## Objectif
+## Goal
 
-Savoir d'un coup d'œil, depuis la barre GNOME, quelle session d'agent travaille,
-a terminé ou attend une réponse, sans revenir dans le terminal.
+See at a glance, from the GNOME top bar, which agent session is working, has
+finished, or is waiting for an answer, without going back to the terminal.
 
-## Hors périmètre de la v1
+## Out of scope for v1
 
-- Quotas d'abonnement et coût en argent
-- Retour au terminal, reprise d'une session
-- Réponse aux demandes de permission depuis le panneau
-- Autres outils que Claude Code
-- Publication sur extensions.gnome.org
+- Subscription quotas and monetary cost
+- Going back to the terminal, resuming a session
+- Answering permission prompts from the panel
+- Tools other than Claude Code
+- Publishing on extensions.gnome.org
 - Logo, notifications
 
-## Modèle de données
+## Data model
 
-Chaque adaptateur produit des sessions dans un format commun :
+Each adapter produces sessions in a common format:
 
 ```text
 session
 ├── source        "claude-code"
-├── key           identifiant stable d'un processus (pid + starttime)
+├── key           stable identifier of a process (pid + starttime)
 ├── sessionId, pid, procStart, kind, cwd, name
 ├── state         working | waiting | background | idle | unknown
-├── rawStatus     valeur source, conservée pour le diagnostic
-├── waitingFor    raison de l'attente, si elle est connue
+├── rawStatus     source value, kept for diagnostics
+├── waitingFor    reason for waiting, when known
 └── startedAt, statusSince
 ```
 
-## Sources d'état
+## State sources
 
-`~/.claude/sessions/<pid>.json` : format non documenté, observé sur Claude Code
-2.1.317 en pilotant une session réelle.
+`~/.claude/sessions/<pid>.json`: undocumented format, observed on Claude Code
+2.1.317 by driving a real session.
 
-| `status` | `waitingFor` | Situation observée | État |
+| `status` | `waitingFor` | Observed situation | State |
 |---|---|---|---|
-| `busy` | | Le modèle travaille, commande au premier plan incluse | `working` |
-| `waiting` | `permission prompt` | Demande de permission (Bash, Write) | `waiting` |
+| `busy` | | The model is working, including a foreground command | `working` |
+| `waiting` | `permission prompt` | Permission prompt (Bash, Write) | `waiting` |
 | `waiting` | `input needed` | Question (`AskUserQuestion`) | `waiting` |
-| `shell` | | Tour terminé, commande encore en arrière-plan | `background` |
-| `idle` | | Plus rien en cours | `idle` |
-| autre | | Non observé | `unknown`, valeur brute affichée |
+| `shell` | | Turn finished, a command is still running in the background | `background` |
+| `idle` | | Nothing in progress | `idle` |
+| other | | Not observed | `unknown`, raw value shown |
 
-Les hooks Claude Code restent une option si le format change, ou s'il faut
-distinguer « a terminé » de « n'a encore rien fait ». Ils ne sont plus nécessaires
-pour détecter une demande de permission.
+Claude Code hooks remain an option if the format changes, or to tell "has
+finished" from "has not done anything yet". They are no longer needed to detect a
+permission prompt.
 
-## Sous-agents et tokens
+## Subagents and tokens
 
-`~/.claude/projects/<cwd transformé>/` :
+`~/.claude/projects/<transformed cwd>/`:
 
-- `<sessionId>.jsonl` : `message.usage` et `message.model` sur les lignes
-  `assistant`. Un même `message.id` se répète sur plusieurs lignes : il ne compte
-  qu'une fois.
-- `<sessionId>/subagents/agent-*.meta.json` : `agentType`, `description`,
-  `finished`. `finished` est absent pendant l'exécution, puis vaut `true`.
-- `<sessionId>/subagents/agent-*.jsonl` : même format d'usage.
+- `<sessionId>.jsonl`: `message.usage` and `message.model` on `assistant` lines. The
+  same `message.id` repeats on several lines and counts once.
+- `<sessionId>/subagents/agent-*.meta.json`: `agentType`, `description`, `finished`,
+  `stoppedByUser`. `finished` is absent while running, then `true`.
+- `<sessionId>/subagents/agent-*.jsonl`: same usage format.
 
-Un sous-agent est actif si `finished` n'est pas `true` et si son transcript a été
-modifié depuis le lancement du processus : les anciens fichiers n'ont jamais
-`finished`.
+A subagent is running if it is neither finished nor stopped by the user, and its
+transcript was modified since the process started: old files never have `finished`.
 
-Le « contexte actuel » additionne les tokens d'entrée du dernier message. Il n'y a
-pas de pourcentage : la taille de la fenêtre de contexte n'apparaît pas dans ces
-fichiers.
+"Current context" adds up the input tokens of the last message. There is no
+percentage, because the context window size does not appear in these files.
 
-## Règles de conception
+## Design rules
 
-- Aucune I/O bloquante : le code tourne dans le processus de GNOME Shell.
-- Une session morte se détecte par son PID et son `starttime`, jamais par la
-  seule présence d'un fichier.
-- `disable()` retire toutes les icônes, sources GLib et moniteurs.
-- L'extension n'ouvre jamais les fichiers `.key` de `~/.claude/sessions/`, ni
-  les identifiants de Claude Code.
-- Les transcripts contiennent les conversations : ils ne sont lus que menu ouvert
-  et option tokens active, de façon incrémentale, et seuls les nombres et le modèle
-  sont conservés.
-- Les `.meta.json` des sous-agents sont lus en continu si l'option sous-agents est
-  active. Leur `description` est du texte de tâche, conservé en mémoire et affiché.
-- Une icône par session ou une seule icône, au choix. Les sous-agents sont un
-  badge, pas des icônes.
+- No blocking I/O: the code runs in the GNOME Shell process.
+- A dead session is detected by its PID and `starttime`, never by the mere presence
+  of a file.
+- `disable()` removes all icons, GLib sources and monitors.
+- The extension never opens the `.key` files in `~/.claude/sessions/`, or Claude
+  Code's credentials.
+- Transcripts hold the conversations: they are read only with a menu open and the
+  token option on, incrementally, and only the numbers and the model are kept.
+- Subagent `.meta.json` files are read continuously when the subagent option is on.
+  Their `description` is task text, kept in memory and displayed.
+- One icon per session or a single icon, as chosen. Subagents are a badge, not icons.
 
-## Questions ouvertes
+## Open questions
 
-1. Comment distinguer « a terminé » de « n'a encore rien fait » ? `idle` couvre
-   les deux.
-2. Les sessions d'un autre `kind` qu'`interactive` doivent-elles apparaître ?
-3. `pidDomain` a-t-il un rôle à jouer pour les sessions lancées en conteneur ?
-4. Le délai d'affichage et l'encombrement de la barre conviennent-ils à l'usage ?
+1. How to tell "has finished" from "has not done anything yet"? `idle` covers both.
+2. Should sessions of a `kind` other than `interactive` appear?
+3. Does `pidDomain` have a role for sessions started in a container?
+4. Do the display delay and the space taken in the bar suit daily use?

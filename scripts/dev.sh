@@ -14,13 +14,13 @@ case "${1:-}" in
         ;;
     link)
         if [[ -e "$TARGET" && ! -L "$TARGET" ]]; then
-            echo "$TARGET existe et n'est pas un lien : rien n'a été modifié." >&2
+            echo "$TARGET exists and is not a link: nothing was changed." >&2
             exit 1
         fi
         glib-compile-schemas "$ROOT/extension/schemas"
         mkdir -p "$(dirname "$TARGET")"
         ln -sfn "$ROOT/extension" "$TARGET"
-        echo "Lien créé. Sous Wayland, déconnecte-toi et reconnecte-toi, puis :"
+        echo "Link created. On Wayland, log out and back in, then:"
         echo "  gnome-extensions enable $UUID"
         ;;
     unlink)
@@ -28,7 +28,7 @@ case "${1:-}" in
         if [[ -L "$TARGET" ]]; then
             rm "$TARGET"
         elif [[ -e "$TARGET" ]]; then
-            echo "$TARGET n'est pas un lien : rien n'a été supprimé." >&2
+            echo "$TARGET is not a link: nothing was removed." >&2
             exit 1
         fi
         ;;
@@ -37,7 +37,7 @@ case "${1:-}" in
         gnome-extensions pack "$ROOT/extension" --extra-source=lib --extra-source=../LICENSE --force --out-dir="$ROOT/dist"
         ;;
     *)
-        echo "Usage : $0 {test|check|link|unlink|pack}" >&2
+        echo "Usage: $0 {test|check|link|unlink|pack}" >&2
         exit 2
         ;;
 esac

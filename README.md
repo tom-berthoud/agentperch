@@ -5,8 +5,7 @@ one is working, which one is done, and which one is waiting for you.
 
 ![AgentPerch in the top bar, with one session menu open](docs/screenshot.png)
 
-**Status: early.** Claude Code only, GNOME Shell 50 only, and the interface is in
-French for now.
+**Status: early.** Claude Code only, GNOME Shell 50 only.
 
 > AgentPerch is an independent project, not affiliated with or endorsed by
 > Anthropic. It reads Claude Code's internal files (`~/.claude/sessions/` and

@@ -1,4 +1,4 @@
-// Logique pure, sans dépendance à GNOME Shell : testable avec `gjs -m`.
+// Pure logic with no GNOME Shell dependency: testable with `gjs -m`.
 
 export const State = Object.freeze({
     WORKING: 'working',
@@ -8,28 +8,28 @@ export const State = Object.freeze({
     UNKNOWN: 'unknown',
 });
 
-// Valeurs observées sur Claude Code 2.1.317 (voir docs/SPEC.md).
+// Values observed on Claude Code 2.1.317 (see docs/SPEC.md).
 const CLAUDE_STATUS_TO_STATE = {
     busy: State.WORKING,
     waiting: State.WAITING,
-    shell: State.BACKGROUND, // Tour terminé, une commande tourne encore en arrière-plan.
+    shell: State.BACKGROUND, // Turn finished, a command is still running in the background.
     idle: State.IDLE,
 };
 
 const STATE_TEXT = {
-    [State.WORKING]: 'Travaille',
-    [State.WAITING]: 'Attend une réponse',
-    [State.BACKGROUND]: 'Tâche de fond en cours',
-    [State.IDLE]: 'Inactive',
-    [State.UNKNOWN]: 'État inconnu',
+    [State.WORKING]: 'Working',
+    [State.WAITING]: 'Waiting for you',
+    [State.BACKGROUND]: 'Background task running',
+    [State.IDLE]: 'Idle',
+    [State.UNKNOWN]: 'Unknown state',
 };
 
 const WAITING_REASON_TEXT = {
-    'permission prompt': 'Demande une permission',
-    'input needed': 'Pose une question',
+    'permission prompt': 'Asking for permission',
+    'input needed': 'Asking a question',
 };
 
-// Du plus urgent au moins urgent : c'est l'état affiché par l'icône unique.
+// From most to least urgent: this is the state the single icon shows.
 const STATE_PRIORITY = [
     State.WAITING,
     State.WORKING,
@@ -38,8 +38,8 @@ const STATE_PRIORITY = [
     State.IDLE,
 ];
 
-// Ne recopie que les champs utiles : le fichier source contient aussi des
-// informations (socket de messagerie, etc.) que l'UI n'a pas à conserver.
+// Copies only the useful fields: the source file also holds information (messaging
+// socket, etc.) that the UI has no reason to keep.
 export function normalizeClaudeSession(raw) {
     if (!Number.isInteger(raw?.pid) || raw.pid <= 0 || typeof raw.sessionId !== 'string')
         return null;
@@ -62,10 +62,9 @@ export function normalizeClaudeSession(raw) {
     };
 }
 
-// Format de /proc/<pid>/stat : « pid (comm) state ... starttime ... ».
-// comm peut contenir des espaces et des parenthèses : on coupe donc à la
-// dernière « ) ». Le champ 3 (state) devient l'indice 0, le champ 22
-// (starttime) l'indice 19.
+// Format of /proc/<pid>/stat: "pid (comm) state ... starttime ...".
+// comm can contain spaces and parentheses, so split at the last ")". Field 3
+// (state) becomes index 0, field 22 (starttime) index 19.
 export function parseProcStat(text) {
     const end = text.lastIndexOf(')');
     if (end < 0)
@@ -78,8 +77,8 @@ export function parseProcStat(text) {
     return {state: fields[0], startTime: fields[19]};
 }
 
-// Comparer starttime protège contre la réutilisation d'un PID par un autre
-// processus après un crash de Claude Code.
+// Comparing starttime protects against a PID being reused by another process after
+// a Claude Code crash.
 export function isSameLiveProcess(stat, procStart) {
     if (!stat || stat.state === 'Z' || stat.state === 'X')
         return false;
@@ -127,7 +126,7 @@ export function prettyPath(path, home) {
 
 export function stateText(session) {
     if (session.state === State.UNKNOWN)
-        return `${STATE_TEXT[State.UNKNOWN]} (${session.rawStatus ?? 'absent'})`;
+        return `${STATE_TEXT[State.UNKNOWN]} (${session.rawStatus ?? 'missing'})`;
     if (session.state === State.WAITING && session.waitingFor)
         return WAITING_REASON_TEXT[session.waitingFor] ?? `${STATE_TEXT[State.WAITING]} (${session.waitingFor})`;
     return STATE_TEXT[session.state];
@@ -138,17 +137,17 @@ export function aggregateState(sessions) {
     return STATE_PRIORITY.find(state => states.has(state)) ?? State.IDLE;
 }
 
-// Nom du dossier de ~/.claude/projects : chaque caractère non alphanumérique du
-// chemin devient un tiret. Règle déduite de l'observation, d'où le repli sur une
-// recherche par sessionId dans transcripts.js.
+// Directory name in ~/.claude/projects: each non-alphanumeric character of the path
+// becomes a dash. This rule comes from observation, hence the fallback search by
+// sessionId in transcripts.js.
 export function projectDirName(cwd) {
     return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
-// `finished` reste absent sur les anciens fichiers de sous-agents et sur ceux
-// arrêtés par l'utilisateur (`stoppedByUser`) : seul un transcript modifié depuis le
-// lancement du processus peut désigner un sous-agent actif. Sans ces deux dates, on
-// ne peut rien affirmer : mieux vaut pas de badge qu'un badge faux.
+// `finished` stays absent on old subagent files and on those stopped by the user
+// (`stoppedByUser`): only a transcript modified since the process started can mean a
+// running subagent. Without both dates nothing can be claimed, and no badge is better
+// than a wrong one.
 export function isSubagentRunning(meta, transcriptMtimeMs, sessionStartedAt) {
     if (meta?.finished === true || meta?.stoppedByUser === true)
         return false;
@@ -159,8 +158,8 @@ export function isSubagentRunning(meta, transcriptMtimeMs, sessionStartedAt) {
 const USAGE_MARKER = '"usage"';
 const NEWLINE = 10;
 
-// Additionne les tokens d'un transcript .jsonl lu par morceaux. Ne conserve que
-// des nombres et le nom du modèle, jamais le contenu des messages.
+// Adds up the tokens of a .jsonl transcript read in chunks. Keeps only numbers and
+// the model name, never message content.
 export class UsageAccumulator {
     constructor({includeSidechain = false} = {}) {
         this._includeSidechain = includeSidechain;
@@ -180,7 +179,7 @@ export class UsageAccumulator {
             this._rest = null;
         }
 
-        // Découpe sur les octets : un morceau peut couper un caractère UTF-8.
+        // Split on bytes: a chunk can cut a UTF-8 character.
         let start = 0;
         for (;;) {
             const end = data.indexOf(NEWLINE, start);
@@ -211,11 +210,11 @@ export class UsageAccumulator {
             return;
         if (entry.isSidechain && !this._includeSidechain)
             return;
-        // Les messages synthétiques (<synthetic>) ne reflètent aucun appel réel.
+        // Synthetic messages (<synthetic>) reflect no real call.
         if (typeof message.model !== 'string' || message.model.startsWith('<'))
             return;
 
-        // Un même message.id apparaît sur plusieurs lignes avec le même usage.
+        // The same message.id appears on several lines with the same usage.
         const counts = {
             input: (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0),
             cacheRead: usage.cache_read_input_tokens ?? 0,
@@ -245,8 +244,8 @@ export function formatTokens(count) {
     if (count < 1000)
         return String(count);
     if (count < 1_000_000)
-        return `${Math.round(count / 1000)} k`;
-    return `${(count / 1_000_000).toFixed(1).replace('.', ',')} M`;
+        return `${Math.round(count / 1000)}k`;
+    return `${(count / 1_000_000).toFixed(1)}M`;
 }
 
 function truncate(text, maxChars) {
@@ -268,17 +267,17 @@ function agentLine(agent) {
     return `${mark} ${agent.type ?? 'agent'}${description}${tokens}`;
 }
 
-// Lignes de détail du menu. details : {usage: totals|null, agents: [...]|null}.
+// Menu detail lines. details: {usage: totals|null, agents: [...]|null}.
 export function detailLines(details) {
     const lines = [];
 
     const usage = details.usage;
     if (usage?.model) {
-        lines.push(`Modèle : ${usage.model}`);
-        lines.push(`Contexte actuel : ${formatTokens(usage.context)} tokens`);
-        lines.push(`Cumul : ${formatTokens(usage.input)} en entrée · ` +
-            `${formatTokens(usage.output)} en sortie · ` +
-            `${formatTokens(usage.cacheRead)} lus en cache`);
+        lines.push(`Model: ${usage.model}`);
+        lines.push(`Current context: ${formatTokens(usage.context)} tokens`);
+        lines.push(`Total: ${formatTokens(usage.input)} in · ` +
+            `${formatTokens(usage.output)} out · ` +
+            `${formatTokens(usage.cacheRead)} cache read`);
     }
 
     const agents = details.agents;
@@ -286,10 +285,10 @@ export function detailLines(details) {
         const running = agents.filter(agent => agent.running);
         const inactive = agents.filter(agent => !agent.running);
         const shown = inactive.slice(0, MAX_INACTIVE_AGENTS_SHOWN);
-        lines.push(`Sous-agents : ${running.length} actif(s) sur ${agents.length}`);
+        lines.push(`Subagents: ${running.length} running of ${agents.length}`);
         lines.push(...running.map(agentLine), ...shown.map(agentLine));
         if (inactive.length > shown.length)
-            lines.push(`+ ${inactive.length - shown.length} autre(s)`);
+            lines.push(`+ ${inactive.length - shown.length} more`);
     }
     return lines;
 }

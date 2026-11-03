@@ -1,6 +1,6 @@
-// Lit ~/.claude/projects/ : sous-agents et tokens de chaque session. Ces fichiers
-// contiennent les conversations : seuls des nombres, le modèle et le type et la
-// description des sous-agents en sortent. Format interne, voir docs/SPEC.md.
+// Reads ~/.claude/projects/: subagents and tokens of each session. These files hold
+// the conversations: only numbers, the model, and subagent types and descriptions
+// come out. Internal format, see docs/SPEC.md.
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
@@ -13,8 +13,8 @@ Gio._promisify(Gio.InputStream.prototype, 'skip_async');
 Gio._promisify(Gio.InputStream.prototype, 'read_bytes_async');
 Gio._promisify(Gio.InputStream.prototype, 'close_async');
 
-// Morceaux courts, en priorité basse : un transcript peut peser plusieurs Mo, et
-// rendre la main entre deux lectures garde la barre fluide.
+// Short chunks at low priority: a transcript can weigh several MB, and yielding
+// between reads keeps the bar smooth.
 const CHUNK_BYTES = 128 * 1024;
 const AGENTS_MIN_INTERVAL_MS = 2000;
 const MISSING_DIR_RETRY_MS = 30_000;
@@ -35,7 +35,7 @@ async function queryInfo(path, attributes, cancellable) {
     }
 }
 
-// Lecture incrémentale : seuls les octets ajoutés depuis la dernière fois sont lus.
+// Incremental read: only the bytes added since last time are read.
 class UsageFile {
     constructor(path, options) {
         this._path = path;
@@ -62,7 +62,7 @@ class UsageFile {
             return;
 
         const size = info.get_size();
-        if (size < this._offset) { // Fichier réécrit : on repart de zéro.
+        if (size < this._offset) { // File rewritten: start over.
             this._accumulator = new UsageAccumulator(this._options);
             this._offset = 0;
         }
@@ -113,7 +113,7 @@ export class SessionFiles {
         return entry;
     }
 
-    // Oublie les sessions fermées.
+    // Forgets closed sessions.
     retain(sessions) {
         const live = new Set(sessions.map(session => session.sessionId));
         for (const id of this._entries.keys()) {
@@ -122,7 +122,7 @@ export class SessionFiles {
         }
     }
 
-    // Partagé : le badge et le menu peuvent demander le dossier en même temps.
+    // Shared: the badge and the menu can ask for the directory at the same time.
     _projectDir(session, entry) {
         if (entry.dir)
             return Promise.resolve(entry.dir);
@@ -136,8 +136,8 @@ export class SessionFiles {
         const hasTranscript = async dir => await queryInfo(
             `${dir}/${session.sessionId}.jsonl`, 'standard::type', this._cancellable) !== null;
 
-        // Le transcript n'existe pas avant le premier message : ce test léger est
-        // refait à chaque fois.
+        // The transcript does not exist before the first message: this light check is
+        // repeated every time.
         if (session.cwd) {
             const dir = `${this._root}/${projectDirName(session.cwd)}`;
             if (await hasTranscript(dir)) {
@@ -146,8 +146,8 @@ export class SessionFiles {
             }
         }
 
-        // Le cwd courant peut différer de celui du lancement : repli sur une
-        // recherche dans tous les projets, plus rare.
+        // The current cwd can differ from the one at launch: fall back to a less frequent
+        // search through all projects.
         const now = GLib.get_monotonic_time() / 1000;
         if (now - entry.dirCheckedAt < MISSING_DIR_RETRY_MS)
             return null;
@@ -175,13 +175,13 @@ export class SessionFiles {
             meta = JSON.parse(await readText(`${directory}/${name}`, this._cancellable));
         } catch (e) {
             rethrowIfCancelled(e);
-            if (!known) // Fichier en cours d'écriture : il sera relu au prochain passage.
+            if (!known) // File being written: it will be read again next pass.
                 return;
         }
 
         const transcript = `${directory}/${id}.jsonl`;
         const info = await queryInfo(transcript, 'time::modified', this._cancellable);
-        // La précision est à la seconde : on prend la fin de cette seconde.
+        // Precision is one second: take the end of that second.
         const mtime = info ? (info.get_attribute_uint64('time::modified') + 1) * 1000 : 0;
 
         const agent = known ?? {
@@ -209,7 +209,7 @@ export class SessionFiles {
             name => this._refreshAgent(entry.agents, directory, name, session)));
     }
 
-    // Partagé entre le badge et le menu : limité à un passage toutes les 2 s.
+    // Shared by the badge and the menu: limited to one pass every 2 s.
     async _agents(session) {
         const entry = this._entry(session);
         const now = GLib.get_monotonic_time() / 1000;
@@ -233,11 +233,11 @@ export class SessionFiles {
         for (const agent of agents) {
             if (!withUsage || agent.usageComplete)
                 continue;
-            // Le transcript peut encore recevoir des lignes juste après `finished` :
-            // cette lecture n'est la dernière que si le sous-agent a fini depuis un moment.
+            // The transcript can still receive lines right after `finished`: this read is
+            // the last one only if the subagent finished a while ago.
             const settled = agent.finished === true &&
                 Date.now() - agent.mtime > AGENT_SETTLE_MS;
-            // Séquentiel : une session peut avoir des dizaines de transcripts.
+            // Sequential: a session can have dozens of transcripts.
             // eslint-disable-next-line no-await-in-loop
             await agent.usage.update(this._cancellable);
             agent.usageComplete = settled;

@@ -1,6 +1,6 @@
-// Extension de test, chargée uniquement par scripts/headless-check.sh.
-// Elle écrit l'état réel de la barre dans un fichier et répond à des commandes
-// déposées sous forme de fichiers.
+// Test extension, loaded only by scripts/headless-check.sh.
+// It writes the real state of the bar to a file and responds to commands dropped
+// as files.
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
@@ -18,7 +18,7 @@ function indicatorEntries() {
         .filter(([role]) => role.startsWith('agentperch-'));
 }
 
-// Aplatit sections et sous-menus ; les séparateurs n'ont pas de texte.
+// Flattens sections and submenus; separators have no text.
 function menuLines(menu) {
     return menu._getMenuItems().flatMap(item => {
         if (item instanceof PopupMenu.PopupMenuSection)

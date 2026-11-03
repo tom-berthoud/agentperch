@@ -1,5 +1,5 @@
-// Adaptateur Claude Code : lit ~/.claude/sessions/<pid>.json.
-// Ce format semble interne à Claude Code et peut changer (voir docs/SPEC.md).
+// Claude Code adapter: reads ~/.claude/sessions/<pid>.json.
+// This format appears to be internal to Claude Code and can change (see docs/SPEC.md).
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
@@ -28,7 +28,7 @@ export async function readText(path, cancellable) {
     return decoder.decode(bytes);
 }
 
-// Liste les noms d'un dossier ; un dossier absent donne une liste vide.
+// Lists the names in a directory; a missing directory gives an empty list.
 export async function listNames(directory, suffix, cancellable) {
     const dir = Gio.File.new_for_path(directory);
     let enumerator;
@@ -73,7 +73,7 @@ async function isAlive(session, cancellable) {
         return isSameLiveProcess(parseProcStat(text), session.procStart);
     } catch (e) {
         rethrowIfCancelled(e);
-        return false; // Le processus a disparu entre-temps.
+        return false; // The process has gone in the meantime.
     }
 }
 
@@ -84,18 +84,18 @@ async function loadSession(directory, name, previous, cancellable) {
         session = normalizeClaudeSession(JSON.parse(text));
     } catch (e) {
         rethrowIfCancelled(e);
-        // Fichier en cours d'écriture ou supprimé : on garde la dernière valeur
-        // connue pour éviter qu'une icône clignote. isAlive tranche ensuite.
+        // File being written or deleted: keep the last known value so an icon does not
+        // flicker. isAlive decides next.
     }
     if (!session || !(await isAlive(session, cancellable)))
         return null;
     return {name, session};
 }
 
-// Renvoie les sessions vivantes triées, et le cache à repasser au scan suivant.
+// Returns the sorted live sessions, and the cache to pass to the next scan.
 export async function scanSessions(directory, previous, cancellable = null) {
-    // Le filtre .json écarte notamment les fichiers .key du dossier, que
-    // l'extension ne doit jamais ouvrir.
+    // The .json filter notably excludes the .key files in this directory, which the
+    // extension must never open.
     const names = await listNames(directory, '.json', cancellable);
     const loaded = await Promise.all(
         names.map(name => loadSession(directory, name, previous, cancellable)));
